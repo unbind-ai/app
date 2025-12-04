@@ -145,8 +145,9 @@ Contributions welcome:
 
 ## 📜 License
 
-MIT License — Use freely.
-
+© 2025 Unbind. All rights reserved.
+Free to use. Code is proprietary.
 ---
 
 *Your conversations. Your data. Your rules.* ◈
+
