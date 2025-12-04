@@ -1,0 +1,1200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Unbind Viewer — Browse Your Exports</title>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-primary: #0d0d0d;
+            --bg-secondary: #1a1a1a;
+            --bg-tertiary: #262626;
+            --bg-hover: #333333;
+            --text-primary: #ececec;
+            --text-secondary: #999999;
+            --text-muted: #666666;
+            --accent: #10a37f;
+            --accent-hover: #1a7f64;
+            --accent-glow: rgba(16, 163, 127, 0.3);
+            --border: #333333;
+            --user-bubble: #2f2f2f;
+            --assistant-bubble: transparent;
+            --search-highlight: #ffcc00;
+            --error: #ef4444;
+            --success: #10b981;
+            --warning: #f59e0b;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* Layout */
+        .container {
+            display: grid;
+            grid-template-columns: 320px 1fr;
+            grid-template-rows: 60px 1fr;
+            height: 100vh;
+        }
+
+        /* Header */
+        .header {
+            grid-column: 1 / -1;
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 24px;
+            gap: 24px;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-weight: 600;
+            font-size: 18px;
+        }
+
+        .logo-icon {
+            width: 32px;
+            height: 32px;
+            background: linear-gradient(135deg, var(--accent), #065f46);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+        }
+
+        .search-container {
+            flex: 1;
+            max-width: 600px;
+            position: relative;
+        }
+
+        .search-input {
+            width: 100%;
+            padding: 10px 16px 10px 44px;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: var(--text-primary);
+            font-size: 14px;
+            font-family: inherit;
+            transition: all 0.2s;
+        }
+
+        .search-input:focus {
+            outline: none;
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px var(--accent-glow);
+        }
+
+        .search-input::placeholder {
+            color: var(--text-muted);
+        }
+
+        .search-icon {
+            position: absolute;
+            left: 14px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--text-muted);
+            font-size: 16px;
+        }
+
+        .stats-bar {
+            display: flex;
+            gap: 24px;
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+
+        .stat {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .stat-value {
+            color: var(--text-primary);
+            font-weight: 600;
+            font-family: 'IBM Plex Mono', monospace;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            background: var(--bg-secondary);
+            border-right: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .sidebar-header {
+            padding: 16px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .load-btn {
+            width: 100%;
+            padding: 12px 16px;
+            background: var(--accent);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            font-family: inherit;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .load-btn:hover {
+            background: var(--accent-hover);
+        }
+
+        .load-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .filter-tabs {
+            display: flex;
+            gap: 4px;
+            background: var(--bg-tertiary);
+            padding: 4px;
+            border-radius: 8px;
+        }
+
+        .filter-tab {
+            flex: 1;
+            padding: 8px 12px;
+            background: transparent;
+            border: none;
+            color: var(--text-secondary);
+            font-size: 12px;
+            font-family: inherit;
+            cursor: pointer;
+            border-radius: 6px;
+            transition: all 0.2s;
+        }
+
+        .filter-tab:hover {
+            color: var(--text-primary);
+        }
+
+        .filter-tab.active {
+            background: var(--bg-hover);
+            color: var(--text-primary);
+        }
+
+        .conversation-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 8px;
+        }
+
+        .conversation-item {
+            padding: 12px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.15s;
+            margin-bottom: 4px;
+        }
+
+        .conversation-item:hover {
+            background: var(--bg-hover);
+        }
+
+        .conversation-item.active {
+            background: var(--bg-tertiary);
+            border-left: 3px solid var(--accent);
+            padding-left: 9px;
+        }
+
+        .conversation-item.search-match {
+            border-left: 3px solid var(--search-highlight);
+            padding-left: 9px;
+        }
+
+        .conversation-title {
+            font-size: 14px;
+            font-weight: 500;
+            margin-bottom: 4px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .conversation-meta {
+            font-size: 12px;
+            color: var(--text-muted);
+            display: flex;
+            gap: 12px;
+        }
+
+        .conversation-preview {
+            font-size: 12px;
+            color: var(--text-secondary);
+            margin-top: 6px;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+
+        /* Main Content */
+        .main {
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .conversation-header {
+            padding: 16px 24px;
+            border-bottom: 1px solid var(--border);
+            background: var(--bg-secondary);
+        }
+
+        .conversation-header h2 {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+
+        .conversation-header-meta {
+            font-size: 13px;
+            color: var(--text-secondary);
+            display: flex;
+            gap: 16px;
+        }
+
+        .messages-container {
+            flex: 1;
+            overflow-y: auto;
+            padding: 24px;
+        }
+
+        .message {
+            max-width: 800px;
+            margin: 0 auto 24px;
+            padding: 16px 20px;
+            border-radius: 12px;
+        }
+
+        .message.user {
+            background: var(--user-bubble);
+        }
+
+        .message.assistant {
+            background: var(--assistant-bubble);
+            border: 1px solid var(--border);
+        }
+
+        .message-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+
+        .message-avatar {
+            width: 28px;
+            height: 28px;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+        }
+
+        .message-avatar.user {
+            background: #5436da;
+        }
+
+        .message-avatar.assistant {
+            background: var(--accent);
+        }
+
+        .message-role {
+            font-weight: 600;
+            font-size: 14px;
+        }
+
+        .message-time {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-left: auto;
+        }
+
+        .message-content {
+            font-size: 15px;
+            line-height: 1.7;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+
+        .message-content code {
+            font-family: 'IBM Plex Mono', monospace;
+            background: var(--bg-tertiary);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 13px;
+        }
+
+        .message-content pre {
+            background: var(--bg-primary);
+            padding: 16px;
+            border-radius: 8px;
+            overflow-x: auto;
+            margin: 12px 0;
+        }
+
+        .message-content pre code {
+            background: transparent;
+            padding: 0;
+        }
+
+        .highlight {
+            background: var(--search-highlight);
+            color: #000;
+            padding: 1px 3px;
+            border-radius: 3px;
+        }
+
+        /* Welcome State */
+        .welcome-state {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 48px;
+            text-align: center;
+        }
+
+        .welcome-icon {
+            width: 80px;
+            height: 80px;
+            background: linear-gradient(135deg, var(--accent), #065f46);
+            border-radius: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 40px;
+            margin-bottom: 24px;
+        }
+
+        .welcome-state h2 {
+            font-size: 24px;
+            margin-bottom: 12px;
+        }
+
+        .welcome-state p {
+            color: var(--text-secondary);
+            max-width: 400px;
+            line-height: 1.6;
+        }
+
+        /* Integrity Panel */
+        .integrity-panel {
+            position: fixed;
+            top: 60px;
+            right: 0;
+            width: 400px;
+            height: calc(100vh - 60px);
+            background: var(--bg-secondary);
+            border-left: 1px solid var(--border);
+            transform: translateX(100%);
+            transition: transform 0.3s ease;
+            z-index: 100;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .integrity-panel.open {
+            transform: translateX(0);
+        }
+
+        .integrity-header {
+            padding: 20px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .integrity-header h3 {
+            font-size: 16px;
+            font-weight: 600;
+        }
+
+        .close-btn {
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            font-size: 20px;
+            cursor: pointer;
+        }
+
+        .close-btn:hover {
+            color: var(--text-primary);
+        }
+
+        .integrity-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+        }
+
+        .integrity-section {
+            margin-bottom: 24px;
+        }
+
+        .integrity-section h4 {
+            font-size: 13px;
+            text-transform: uppercase;
+            color: var(--text-muted);
+            margin-bottom: 12px;
+            letter-spacing: 0.5px;
+        }
+
+        .integrity-stat {
+            display: flex;
+            justify-content: space-between;
+            padding: 10px 0;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .integrity-stat:last-child {
+            border-bottom: none;
+        }
+
+        .integrity-label {
+            color: var(--text-secondary);
+        }
+
+        .integrity-value {
+            font-family: 'IBM Plex Mono', monospace;
+            font-weight: 500;
+        }
+
+        .integrity-value.success {
+            color: var(--success);
+        }
+
+        .integrity-value.warning {
+            color: var(--warning);
+        }
+
+        .integrity-value.error {
+            color: var(--error);
+        }
+
+        .integrity-check {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 12px;
+            background: var(--bg-tertiary);
+            border-radius: 8px;
+            margin-bottom: 8px;
+        }
+
+        .check-icon {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+        }
+
+        .check-icon.pass {
+            background: var(--success);
+        }
+
+        .check-icon.fail {
+            background: var(--error);
+        }
+
+        .check-icon.warn {
+            background: var(--warning);
+        }
+
+        /* Loading State */
+        .loading-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.8);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.3s;
+        }
+
+        .loading-overlay.visible {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        .spinner {
+            width: 48px;
+            height: 48px;
+            border: 3px solid var(--border);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-bottom: 16px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .loading-text {
+            font-size: 16px;
+            color: var(--text-secondary);
+        }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: var(--border);
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--text-muted);
+        }
+
+        /* Hidden file input */
+        .hidden-input {
+            display: none;
+        }
+
+        /* Toolbar buttons */
+        .toolbar-btn {
+            padding: 8px 14px;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--text-secondary);
+            font-size: 13px;
+            font-family: inherit;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .toolbar-btn:hover {
+            background: var(--bg-hover);
+            color: var(--text-primary);
+        }
+
+        .toolbar {
+            display: flex;
+            gap: 8px;
+        }
+
+        /* Empty state for conversation list */
+        .empty-state {
+            padding: 32px 16px;
+            text-align: center;
+            color: var(--text-muted);
+        }
+
+        .empty-state-icon {
+            font-size: 48px;
+            margin-bottom: 16px;
+            opacity: 0.5;
+        }
+
+        /* Search results count */
+        .search-results {
+            padding: 12px 16px;
+            background: var(--bg-tertiary);
+            border-bottom: 1px solid var(--border);
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+
+        .search-results strong {
+            color: var(--accent);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <div class="logo">
+                <div class="logo-icon">◈</div>
+                <span>Unbind</span>
+            </div>
+            
+            <div class="search-container">
+                <span class="search-icon">🔍</span>
+                <input 
+                    type="text" 
+                    class="search-input" 
+                    id="searchInput"
+                    placeholder="Search across all conversations..."
+                    disabled
+                >
+            </div>
+
+            <div class="stats-bar" id="statsBar">
+                <div class="stat">
+                    <span>Conversations:</span>
+                    <span class="stat-value" id="statConvos">—</span>
+                </div>
+                <div class="stat">
+                    <span>Messages:</span>
+                    <span class="stat-value" id="statMessages">—</span>
+                </div>
+                <div class="stat">
+                    <span>Size:</span>
+                    <span class="stat-value" id="statSize">—</span>
+                </div>
+            </div>
+
+            <div class="toolbar">
+                <button class="toolbar-btn" id="integrityBtn" disabled>
+                    ✓ Integrity
+                </button>
+            </div>
+        </header>
+
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <button class="load-btn" id="loadBtn">
+                    📂 Load Export File
+                </button>
+                <input type="file" id="fileInput" class="hidden-input" accept=".json">
+                
+                <div class="filter-tabs">
+                    <button class="filter-tab active" data-filter="all">All</button>
+                    <button class="filter-tab" data-filter="recent">Recent</button>
+                    <button class="filter-tab" data-filter="starred">GPTs</button>
+                </div>
+            </div>
+            
+            <div id="searchResults" class="search-results" style="display: none;"></div>
+            
+            <div class="conversation-list" id="conversationList">
+                <div class="empty-state">
+                    <div class="empty-state-icon">📁</div>
+                    <p>Load your ChatGPT export to browse conversations</p>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main" id="mainContent">
+            <div class="welcome-state">
+                <div class="welcome-icon">◈</div>
+                <h2>Welcome to Unbind Viewer</h2>
+                <p>Load your ChatGPT export JSON file to browse, search, and verify your conversation history.</p>
+            </div>
+        </main>
+    </div>
+
+    <!-- Integrity Panel -->
+    <div class="integrity-panel" id="integrityPanel">
+        <div class="integrity-header">
+            <h3>🔍 Export Integrity Check</h3>
+            <button class="close-btn" id="closeIntegrity">×</button>
+        </div>
+        <div class="integrity-content" id="integrityContent">
+            <!-- Populated by JS -->
+        </div>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="spinner"></div>
+        <div class="loading-text" id="loadingText">Loading export file...</div>
+    </div>
+
+    <script>
+        // ==================== STATE ====================
+        let exportData = null;
+        let filteredConversations = [];
+        let currentConversationId = null;
+        let searchQuery = '';
+
+        // ==================== DOM ELEMENTS ====================
+        const fileInput = document.getElementById('fileInput');
+        const loadBtn = document.getElementById('loadBtn');
+        const searchInput = document.getElementById('searchInput');
+        const conversationList = document.getElementById('conversationList');
+        const mainContent = document.getElementById('mainContent');
+        const loadingOverlay = document.getElementById('loadingOverlay');
+        const loadingText = document.getElementById('loadingText');
+        const integrityPanel = document.getElementById('integrityPanel');
+        const integrityBtn = document.getElementById('integrityBtn');
+        const closeIntegrity = document.getElementById('closeIntegrity');
+        const searchResults = document.getElementById('searchResults');
+
+        // ==================== EVENT LISTENERS ====================
+        loadBtn.addEventListener('click', () => fileInput.click());
+        fileInput.addEventListener('change', handleFileLoad);
+        searchInput.addEventListener('input', debounce(handleSearch, 300));
+        integrityBtn.addEventListener('click', () => integrityPanel.classList.add('open'));
+        closeIntegrity.addEventListener('click', () => integrityPanel.classList.remove('open'));
+
+        document.querySelectorAll('.filter-tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                document.querySelectorAll('.filter-tab').forEach(t => t.classList.remove('active'));
+                tab.classList.add('active');
+                applyFilter(tab.dataset.filter);
+            });
+        });
+
+        // ==================== FILE LOADING ====================
+        async function handleFileLoad(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            showLoading('Loading export file...');
+
+            try {
+                const text = await file.text();
+                showLoading('Parsing JSON data...');
+                
+                exportData = JSON.parse(text);
+                
+                showLoading('Indexing conversations...');
+                await new Promise(r => setTimeout(r, 100)); // Let UI update
+                
+                initializeViewer();
+                hideLoading();
+                
+            } catch (error) {
+                hideLoading();
+                alert('Error loading file: ' + error.message);
+            }
+        }
+
+        function initializeViewer() {
+            // Update stats
+            const totalMessages = exportData.conversations.reduce((sum, c) => sum + (c.messages?.length || 0), 0);
+            document.getElementById('statConvos').textContent = exportData.conversations.length.toLocaleString();
+            document.getElementById('statMessages').textContent = totalMessages.toLocaleString();
+            document.getElementById('statSize').textContent = formatBytes(JSON.stringify(exportData).length);
+            
+            // Enable search and integrity
+            searchInput.disabled = false;
+            integrityBtn.disabled = false;
+            
+            // Sort by most recent
+            filteredConversations = [...exportData.conversations].sort((a, b) => {
+                const dateA = new Date(a.updated || a.created || 0);
+                const dateB = new Date(b.updated || b.created || 0);
+                return dateB - dateA;
+            });
+            
+            renderConversationList();
+            runIntegrityCheck();
+        }
+
+        // ==================== CONVERSATION LIST ====================
+        function renderConversationList() {
+            if (filteredConversations.length === 0) {
+                conversationList.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">🔍</div>
+                        <p>No conversations match your search</p>
+                    </div>
+                `;
+                return;
+            }
+
+            conversationList.innerHTML = filteredConversations.map(conv => {
+                const date = new Date(conv.updated || conv.created);
+                const messageCount = conv.messages?.length || 0;
+                const preview = conv.messages?.[0]?.content?.substring(0, 100) || '';
+                const isGPT = conv.gizmo_id || conv.conversation_template_id;
+                
+                return `
+                    <div class="conversation-item ${conv.id === currentConversationId ? 'active' : ''} ${conv._searchMatch ? 'search-match' : ''}" 
+                         data-id="${conv.id}">
+                        <div class="conversation-title">${isGPT ? '🤖 ' : ''}${escapeHtml(conv.title || 'Untitled')}</div>
+                        <div class="conversation-meta">
+                            <span>${formatDate(date)}</span>
+                            <span>${messageCount} msgs</span>
+                        </div>
+                        ${preview ? `<div class="conversation-preview">${escapeHtml(preview)}</div>` : ''}
+                    </div>
+                `;
+            }).join('');
+
+            // Add click handlers
+            conversationList.querySelectorAll('.conversation-item').forEach(item => {
+                item.addEventListener('click', () => {
+                    currentConversationId = item.dataset.id;
+                    renderConversation(currentConversationId);
+                    
+                    // Update active state
+                    conversationList.querySelectorAll('.conversation-item').forEach(i => i.classList.remove('active'));
+                    item.classList.add('active');
+                });
+            });
+        }
+
+        // ==================== CONVERSATION VIEW ====================
+        function renderConversation(id) {
+            const conv = exportData.conversations.find(c => c.id === id);
+            if (!conv) return;
+
+            const date = new Date(conv.updated || conv.created);
+            const isGPT = conv.gizmo_id || conv.conversation_template_id;
+
+            mainContent.innerHTML = `
+                <div class="conversation-header">
+                    <h2>${isGPT ? '🤖 ' : ''}${escapeHtml(conv.title || 'Untitled')}</h2>
+                    <div class="conversation-header-meta">
+                        <span>📅 ${formatDate(date)}</span>
+                        <span>💬 ${conv.messages?.length || 0} messages</span>
+                        ${conv.model ? `<span>🧠 ${conv.model}</span>` : ''}
+                        ${conv.url ? `<a href="${conv.url}" target="_blank" style="color: var(--accent);">↗ Open in ChatGPT</a>` : ''}
+                    </div>
+                </div>
+                <div class="messages-container">
+                    ${(conv.messages || []).map(msg => renderMessage(msg)).join('')}
+                </div>
+            `;
+        }
+
+        function renderMessage(msg) {
+            const role = msg.role || 'unknown';
+            const content = msg.content || '';
+            const time = msg.time ? new Date(msg.time) : null;
+            
+            let displayContent = escapeHtml(content);
+            
+            // Highlight search matches
+            if (searchQuery) {
+                const regex = new RegExp(`(${escapeRegex(searchQuery)})`, 'gi');
+                displayContent = displayContent.replace(regex, '<span class="highlight">$1</span>');
+            }
+            
+            // Basic code block formatting
+            displayContent = displayContent.replace(/```(\w*)\n?([\s\S]*?)```/g, '<pre><code>$2</code></pre>');
+            displayContent = displayContent.replace(/`([^`]+)`/g, '<code>$1</code>');
+
+            return `
+                <div class="message ${role}">
+                    <div class="message-header">
+                        <div class="message-avatar ${role}">
+                            ${role === 'user' ? '👤' : '🤖'}
+                        </div>
+                        <span class="message-role">${role === 'user' ? 'You' : 'ChatGPT'}</span>
+                        ${time ? `<span class="message-time">${formatTime(time)}</span>` : ''}
+                        ${msg.model ? `<span class="message-time">${msg.model}</span>` : ''}
+                    </div>
+                    <div class="message-content">${displayContent}</div>
+                </div>
+            `;
+        }
+
+        // ==================== SEARCH ====================
+        function handleSearch(e) {
+            searchQuery = e.target.value.trim().toLowerCase();
+            
+            if (!searchQuery) {
+                filteredConversations = [...exportData.conversations];
+                filteredConversations.forEach(c => c._searchMatch = false);
+                searchResults.style.display = 'none';
+            } else {
+                let matchCount = 0;
+                filteredConversations = exportData.conversations.filter(conv => {
+                    // Search in title
+                    if (conv.title?.toLowerCase().includes(searchQuery)) {
+                        conv._searchMatch = true;
+                        matchCount++;
+                        return true;
+                    }
+                    
+                    // Search in messages
+                    const messageMatch = conv.messages?.some(m => 
+                        m.content?.toLowerCase().includes(searchQuery)
+                    );
+                    
+                    if (messageMatch) {
+                        conv._searchMatch = true;
+                        matchCount++;
+                        return true;
+                    }
+                    
+                    conv._searchMatch = false;
+                    return false;
+                });
+                
+                searchResults.style.display = 'block';
+                searchResults.innerHTML = `Found <strong>${matchCount}</strong> conversations matching "<strong>${escapeHtml(searchQuery)}</strong>"`;
+            }
+            
+            renderConversationList();
+            
+            // If viewing a conversation, re-render to highlight matches
+            if (currentConversationId) {
+                renderConversation(currentConversationId);
+            }
+        }
+
+        // ==================== FILTERS ====================
+        function applyFilter(filter) {
+            if (!exportData) return;
+            
+            searchResults.style.display = 'none';
+            searchQuery = '';
+            searchInput.value = '';
+            
+            switch (filter) {
+                case 'all':
+                    filteredConversations = [...exportData.conversations];
+                    break;
+                case 'recent':
+                    const thirtyDaysAgo = Date.now() - (30 * 24 * 60 * 60 * 1000);
+                    filteredConversations = exportData.conversations.filter(c => {
+                        const date = new Date(c.updated || c.created || 0);
+                        return date.getTime() > thirtyDaysAgo;
+                    });
+                    break;
+                case 'starred':
+                    filteredConversations = exportData.conversations.filter(c => 
+                        c.gizmo_id || c.conversation_template_id
+                    );
+                    break;
+            }
+            
+            // Sort by most recent
+            filteredConversations.sort((a, b) => {
+                const dateA = new Date(a.updated || a.created || 0);
+                const dateB = new Date(b.updated || b.created || 0);
+                return dateB - dateA;
+            });
+            
+            renderConversationList();
+        }
+
+        // ==================== INTEGRITY CHECK ====================
+        function runIntegrityCheck() {
+            const checks = [];
+            const stats = {};
+            
+            // Basic stats
+            stats.totalConversations = exportData.conversations?.length || 0;
+            stats.totalMessages = exportData.conversations?.reduce((sum, c) => sum + (c.messages?.length || 0), 0) || 0;
+            stats.exportDate = exportData.exported || 'Unknown';
+            stats.schemaVersion = exportData.schema_version || 'Unknown';
+            
+            // Check 1: Conversations exist
+            checks.push({
+                name: 'Conversations Present',
+                pass: stats.totalConversations > 0,
+                detail: `${stats.totalConversations} conversations found`
+            });
+            
+            // Check 2: Messages exist
+            checks.push({
+                name: 'Messages Present',
+                pass: stats.totalMessages > 0,
+                detail: `${stats.totalMessages} messages found`
+            });
+            
+            // Check 3: No empty conversations
+            const emptyConvos = exportData.conversations?.filter(c => !c.messages || c.messages.length === 0).length || 0;
+            checks.push({
+                name: 'No Empty Conversations',
+                pass: emptyConvos === 0,
+                warn: emptyConvos > 0 && emptyConvos < 10,
+                detail: emptyConvos === 0 ? 'All conversations have messages' : `${emptyConvos} empty conversations`
+            });
+            
+            // Check 4: All conversations have IDs
+            const missingIds = exportData.conversations?.filter(c => !c.id).length || 0;
+            checks.push({
+                name: 'All Conversations Have IDs',
+                pass: missingIds === 0,
+                detail: missingIds === 0 ? 'All IDs present' : `${missingIds} missing IDs`
+            });
+            
+            // Check 5: Timestamps present
+            const missingDates = exportData.conversations?.filter(c => !c.created && !c.updated).length || 0;
+            checks.push({
+                name: 'Timestamps Present',
+                pass: missingDates === 0,
+                warn: missingDates > 0,
+                detail: missingDates === 0 ? 'All timestamps present' : `${missingDates} missing timestamps`
+            });
+            
+            // Check 6: Message content valid
+            let emptyMessages = 0;
+            exportData.conversations?.forEach(c => {
+                c.messages?.forEach(m => {
+                    if (!m.content || m.content.trim() === '') emptyMessages++;
+                });
+            });
+            checks.push({
+                name: 'Message Content Valid',
+                pass: emptyMessages === 0,
+                warn: emptyMessages > 0 && emptyMessages < 50,
+                detail: emptyMessages === 0 ? 'All messages have content' : `${emptyMessages} empty messages`
+            });
+            
+            // GPT conversations
+            const gptConvos = exportData.conversations?.filter(c => c.gizmo_id || c.conversation_template_id).length || 0;
+            stats.gptConversations = gptConvos;
+            
+            // Date range
+            let earliest = Infinity, latest = 0;
+            exportData.conversations?.forEach(c => {
+                const d = new Date(c.created || c.updated || 0).getTime();
+                if (d && d < earliest) earliest = d;
+                if (d && d > latest) latest = d;
+            });
+            stats.dateRange = earliest !== Infinity ? 
+                `${formatDate(new Date(earliest))} — ${formatDate(new Date(latest))}` : 
+                'Unknown';
+            
+            // Render integrity panel
+            const integrityContent = document.getElementById('integrityContent');
+            integrityContent.innerHTML = `
+                <div class="integrity-section">
+                    <h4>Export Summary</h4>
+                    <div class="integrity-stat">
+                        <span class="integrity-label">Export Date</span>
+                        <span class="integrity-value">${stats.exportDate}</span>
+                    </div>
+                    <div class="integrity-stat">
+                        <span class="integrity-label">Total Conversations</span>
+                        <span class="integrity-value">${stats.totalConversations.toLocaleString()}</span>
+                    </div>
+                    <div class="integrity-stat">
+                        <span class="integrity-label">Total Messages</span>
+                        <span class="integrity-value">${stats.totalMessages.toLocaleString()}</span>
+                    </div>
+                    <div class="integrity-stat">
+                        <span class="integrity-label">GPT Conversations</span>
+                        <span class="integrity-value">${stats.gptConversations.toLocaleString()}</span>
+                    </div>
+                    <div class="integrity-stat">
+                        <span class="integrity-label">Date Range</span>
+                        <span class="integrity-value">${stats.dateRange}</span>
+                    </div>
+                </div>
+                
+                <div class="integrity-section">
+                    <h4>Integrity Checks</h4>
+                    ${checks.map(check => `
+                        <div class="integrity-check">
+                            <div class="check-icon ${check.pass ? 'pass' : check.warn ? 'warn' : 'fail'}">
+                                ${check.pass ? '✓' : check.warn ? '!' : '✗'}
+                            </div>
+                            <div>
+                                <div style="font-weight: 500;">${check.name}</div>
+                                <div style="font-size: 12px; color: var(--text-muted);">${check.detail}</div>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+        }
+
+        // ==================== UTILITIES ====================
+        function showLoading(text) {
+            loadingText.textContent = text;
+            loadingOverlay.classList.add('visible');
+        }
+
+        function hideLoading() {
+            loadingOverlay.classList.remove('visible');
+        }
+
+        function formatDate(date) {
+            if (!date || isNaN(date)) return 'Unknown';
+            return date.toLocaleDateString('en-US', { 
+                month: 'short', 
+                day: 'numeric', 
+                year: 'numeric' 
+            });
+        }
+
+        function formatTime(date) {
+            if (!date || isNaN(date)) return '';
+            return date.toLocaleTimeString('en-US', { 
+                hour: 'numeric', 
+                minute: '2-digit'
+            });
+        }
+
+        function formatBytes(bytes) {
+            if (bytes < 1024) return bytes + ' B';
+            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+            return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+        }
+
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function escapeRegex(string) {
+            return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        }
+
+        function debounce(func, wait) {
+            let timeout;
+            return function executedFunction(...args) {
+                const later = () => {
+                    clearTimeout(timeout);
+                    func(...args);
+                };
+                clearTimeout(timeout);
+                timeout = setTimeout(later, wait);
+            };
+        }
+    </script>
+</body>
+</html>
