@@ -12,7 +12,7 @@ Free your AI conversations from platform lock-in. Export, own, and explore your 
 
 ### Export Tool
 - ✅ **One-click export** — Paste script, watch it run, download your data
-- ✅ **Works with Teams** — Even when the export button is blocked
+- ✅ **Works with Teams** — ChatGPT Teams has no export feature. This tool gives you one.
 - ✅ **Checkpoint saves** — Auto-saves every 50 conversations (survives crashes)
 - ✅ **Retry logic** — Handles rate limits gracefully
 - ✅ **Custom GPTs** — Exports conversations with your GPTs
@@ -124,7 +124,7 @@ MIT License — Use freely, modify freely, share freely.
 
 Built by the community to solve a real problem: **your AI conversations belong to you**.
 
-ChatGPT Teams blocks exports. OpenAI's official export takes 30 days. You shouldn't need permission to access your own data.
+ChatGPT Teams has no export option. OpenAI's official export for personal accounts takes up to 30 days. You shouldn't need to wait — or be denied entirely — to access your own data.
 
 **Unbind** is the first step toward a world where AI conversations are portable, private, and truly yours.
 
