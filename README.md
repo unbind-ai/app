@@ -1,42 +1,49 @@
-# ◈ Unbind
+# Unbind
 
 **Export your AI conversations. Own your data.**
 
-A browser extension that lets you export your entire ChatGPT history with one click. Works with Free, Plus, and Teams accounts.
+A Chrome extension that exports your entire ChatGPT history with one click. Works with Free, Plus, and **Teams** accounts — the only tool that does.
 
-🧩 **[Install Extension](#installation)** · 🔍 **[Online Viewer](https://unbind-ai.github.io/app/viewer.html)** · 📄 **[UACS Format](#universal-format)**
+[Install Extension](#installation) | [Website](https://unbind.esali.com) | [UACS Format](#universal-format)
 
 ---
 
-## 🎯 Why Unbind?
+## Why Unbind?
 
 - **ChatGPT Teams** has no export feature at all
-- **ChatGPT Personal** export takes up to 30 days
+- **ChatGPT Personal** export takes up to 30 days and misses data
 - **Your conversations** contain valuable knowledge you created
 
 You shouldn't need permission to access your own data.
 
 ---
 
-## ✨ Features
+## Features
 
 | Feature | Description |
 |---------|-------------|
 | **One-Click Export** | Click a button, get your data |
-| **Works Everywhere** | Free, Plus, and Teams accounts |
+| **Teams Support** | The only tool that works with ChatGPT Teams |
+| **3 Formats** | JSON (UACS), Markdown ZIP, CSV |
+| **File Attachments** | Captures uploaded files, images, DALL-E outputs |
+| **Code & Tools** | Preserves code interpreter outputs, plugin calls |
+| **Archived Chats** | Exports archived conversations too |
+| **Shared Links** | Captures shared conversation URLs |
 | **Checkpoint Saves** | Auto-saves every 50 conversations |
-| **Crash Recovery** | Resume if browser closes |
-| **Rate Limit Handling** | Automatic retry with backoff |
-| **Memory & GPTs** | Exports personalization data |
-| **Universal Format** | UACS JSON standard |
+| **Crash Recovery** | Resume if browser closes mid-export |
+| **Parallel Fetch** | 3x faster with concurrent API calls |
+| **Adaptive Speed** | Automatically adjusts to avoid rate limits |
+| **Memory Export** | Exports personalization, memory, custom instructions |
+| **Universal Format** | UACS JSON standard for data portability |
+| **100% Private** | Your data never leaves your browser |
 
 ---
 
-## 📦 Installation
+## Installation
 
 ### Chrome / Edge / Brave
 
-1. Download the [latest release](https://github.com/unbind-ai/app/releases)
+1. Download the [latest release](https://unbind.esali.com)
 2. Unzip the file
 3. Go to `chrome://extensions`
 4. Enable "Developer mode" (top right)
@@ -49,46 +56,68 @@ Coming soon.
 
 ---
 
-## 🚀 Usage
+## Usage
 
 1. Install the extension
 2. Go to [chatgpt.com](https://chatgpt.com)
 3. Click the **Export** button in the sidebar
-4. Wait for completion
-5. Download your JSON file
-
-### View Your Export
-
-Upload your JSON to our [online viewer](https://unbind-ai.github.io/app/viewer.html) to:
-- Search across all conversations
-- Verify data integrity
-- Browse your history
+4. Choose your format (JSON, Markdown, CSV)
+5. Select what to include (archived, shared, memory)
+6. Click **Start Export**
+7. Download when complete
 
 ---
 
-## 📄 Universal Format
+## Export Formats
+
+### JSON (UACS)
+The default. Structured, machine-readable, complete. Uses the Universal AI Conversation Standard for maximum portability.
+
+### Markdown ZIP
+Each conversation as a separate `.md` file in a ZIP archive. Human-readable, great for archiving or importing into note-taking apps.
+
+### CSV
+Flat table format: date, title, role, content, model. Perfect for analysis in spreadsheets or data tools.
+
+---
+
+## Universal Format
 
 Unbind exports use the **Universal AI Conversation Standard (UACS)** — a portable JSON format designed for AI conversation data.
 
 ```json
 {
   "uacs_version": "1.0.0",
+  "export_metadata": {
+    "exported_at": "2026-03-06T...",
+    "workspace_name": "My Team",
+    "account_type": "team"
+  },
   "conversations": [
     {
       "id": "abc123",
       "title": "My Conversation",
-      "source_platform": "chatgpt",
-      "created_at": "2024-01-15T10:30:00.000Z",
+      "source_platform": "chatgpt_teams",
+      "is_archived": false,
+      "is_shared": true,
+      "share_url": "https://chatgpt.com/share/...",
       "messages": [
         {
           "role": "user",
           "content": "Hello!",
-          "timestamp": "2024-01-15T10:30:00.000Z"
+          "timestamp": "2026-01-15T10:30:00.000Z",
+          "attachments": null
         },
         {
-          "role": "assistant", 
+          "role": "assistant",
           "content": "Hi there!",
-          "model_name": "gpt-4o"
+          "model_name": "gpt-4o",
+          "attachments": [
+            {
+              "type": "generated_image",
+              "dalle_prompt": "a sunset over mountains"
+            }
+          ]
         }
       ]
     }
@@ -100,7 +129,7 @@ See [uacs_schema.json](./uacs_schema.json) for the full specification.
 
 ---
 
-## 🔐 Privacy
+## Privacy
 
 - **100% Client-Side** — Your data never leaves your browser
 - **No Accounts** — No sign-up, no tracking
@@ -109,45 +138,10 @@ See [uacs_schema.json](./uacs_schema.json) for the full specification.
 
 ---
 
-## 🛠️ Development
+## License
 
-```bash
-# Clone repo
-git clone https://github.com/unbind-ai/app.git
-
-# Load in Chrome
-# 1. Go to chrome://extensions
-# 2. Enable Developer Mode
-# 3. Load unpacked → select the folder
-```
+MIT License. Free to use, modify, and distribute.
 
 ---
 
-## 📋 Roadmap
-
-- [x] ChatGPT export
-- [x] Conversation viewer
-- [x] UACS format standard
-- [ ] Firefox support
-- [ ] File attachment export
-- [ ] More platforms (coming soon)
-
----
-
-## 🤝 Contributing
-
-Contributions welcome:
-- 🐛 Report bugs
-- 💡 Suggest features
-- 🔧 Submit PRs
-
----
-
-## 📜 License
-
-© 2025 Unbind. All rights reserved.
-Free to use. Code is proprietary.
----
-
-*Your conversations. Your data. Your rules.* ◈
-
+*Your conversations. Your data. Your rules.*
