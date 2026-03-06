@@ -45,6 +45,7 @@
         userProfile: null,
         canvasOutputs: [],
         downloadedFiles: [],
+        _accessToken: null,
     };
 
     // ============================================================
@@ -112,7 +113,7 @@
     function injectExportButton() {
         if (document.getElementById('unbind-export-btn')) return;
 
-        // Always create floating button (guaranteed visible)
+        // Always create floating button first (guaranteed visible)
         createFloatingButton();
 
         // Also try sidebar as nicer UX after DOM settles
@@ -317,6 +318,11 @@
         state.speedSamples = [];
 
         showView('unbind-progress-view');
+        updateStatus('Authenticating...');
+
+        // Get access token first (required for API calls)
+        await ensureAccessToken();
+
         updateStatus('Detecting workspace...');
 
         // Detect workspace
@@ -396,6 +402,7 @@
             while (state.isPaused) await sleep(500);
 
             const data = await fetchAPI(`/backend-api/conversations?offset=${offset}&limit=100&order=updated`);
+            console.log('[Unbind] Conversations response:', JSON.stringify(data).substring(0, 500));
             if (!data?.items || data.items.length === 0) {
                 hasMore = false;
             } else {
@@ -651,7 +658,7 @@
                          part.content_type === 'code_document') {
                     const lang = part.language || '';
                     const code = part.text || part.code || part.content || '';
-                    textParts.push(`\\`\\`\\`${lang}\n${code}\n\\`\\`\\``);
+                    textParts.push('```' + lang + '\n' + code + '\n```');
                 }
                 // Fallback: stringify unknown objects
                 else {
@@ -929,12 +936,46 @@
     // ============================================================
 
     function getHeaders() {
-        const headers = {};
-        const accountCookie = document.cookie.split(';').find(c => c.trim().startsWith('_account='));
-        if (accountCookie) {
-            headers['chatgpt-account-id'] = accountCookie.split('=')[1].trim();
+        const headers = {
+            'Content-Type': 'application/json',
+        };
+
+        // Get auth token from cookie or session
+        const cookies = document.cookie.split(';').reduce((acc, c) => {
+            const [k, ...v] = c.trim().split('=');
+            acc[k] = v.join('=');
+            return acc;
+        }, {});
+
+        // Account ID (critical for Teams)
+        if (cookies['_account']) {
+            headers['chatgpt-account-id'] = cookies['_account'].trim();
         }
+
+        // Try to get access token from __Secure-next-auth.session-token or session
+        // The browser sends cookies automatically, but we also need the bearer token
+        // for some endpoints. Try fetching it from the session API.
+        if (state._accessToken) {
+            headers['Authorization'] = 'Bearer ' + state._accessToken;
+        }
+
         return headers;
+    }
+
+    async function ensureAccessToken() {
+        if (state._accessToken) return;
+        try {
+            const resp = await fetch('/api/auth/session', { credentials: 'include' });
+            if (resp.ok) {
+                const data = await resp.json();
+                if (data.accessToken) {
+                    state._accessToken = data.accessToken;
+                    console.log('[Unbind] Got access token from session');
+                }
+            }
+        } catch (e) {
+            console.warn('[Unbind] Could not get access token:', e);
+        }
     }
 
     async function fetchAPI(url, retries = CONFIG.MAX_RETRIES) {
