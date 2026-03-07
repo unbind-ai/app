@@ -11,6 +11,13 @@
     if (window.__UNBIND_LOADED__) return;
     window.__UNBIND_LOADED__ = true;
 
+    // Respond to keep-alive pings from background (prevents tab hibernation)
+    chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+        if (msg.action === 'keepAlive') {
+            sendResponse({ alive: true, exporting: !!window.__UNBIND_LOADED__ });
+        }
+    });
+
     const CONFIG = {
         VERSION: '2.1.0',
         UACS_VERSION: '1.0.0',
@@ -307,6 +314,9 @@
         state.isRunning = true;
         state.isPaused = false;
         state.startTime = Date.now();
+
+        // Signal background to keep tab alive
+        try { chrome.runtime.sendMessage({ action: 'exportStarted' }); } catch(e) {}
         state.conversations = [];
         state.archivedConversations = [];
         state.messages = {};
@@ -1070,6 +1080,8 @@
 
     function showComplete() {
         state.isRunning = false;
+        // Signal background that export is done
+        try { chrome.runtime.sendMessage({ action: 'exportFinished' }); } catch(e) {}
         clearCheckpoint();
         showView('unbind-complete-view');
 
@@ -1396,13 +1408,43 @@
     }
 
     function triggerDownload(blob, filename) {
+        const size = blob.size;
+
+        // Read blob as data URL and send to background script for chrome.downloads API
+        // (a.click() with blob URLs is blocked by ChatGPT's CSP)
+        const reader = new FileReader();
+        reader.onload = function() {
+            const dataUrl = reader.result;
+            try {
+                chrome.runtime.sendMessage({
+                    action: 'downloadFile',
+                    dataUrl: dataUrl,
+                    filename: filename,
+                }, (response) => {
+                    if (chrome.runtime.lastError || !response?.success) {
+                        console.warn('[Unbind] Background download failed, trying direct approach');
+                        directDownload(blob, filename);
+                    } else {
+                        console.log(`[Unbind] Downloaded via background: ${filename} (${(size / 1024).toFixed(1)} KB)`);
+                    }
+                });
+            } catch (e) {
+                console.warn('[Unbind] Extension context error, trying direct download:', e);
+                directDownload(blob, filename);
+            }
+        };
+        reader.readAsDataURL(blob);
+    }
+
+    function directDownload(blob, filename) {
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
         a.download = filename;
+        a.style.display = 'none';
+        document.body.appendChild(a);
         a.click();
-        URL.revokeObjectURL(url);
-        console.log(`[Unbind] Downloaded: ${filename} (${(blob.size / 1024).toFixed(1)} KB)`);
+        setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 5000);
     }
 
     function dateStamp() {
