@@ -1,5 +1,5 @@
 // ============================================================
-// UNBIND v2.1.0 — Content Script
+// UNBIND v2.2.0 — Content Script
 // Injected into chatgpt.com for one-click export
 // Supports: Free, Plus, Teams accounts
 // Output: UACS (Universal AI Conversation Standard)
@@ -11,15 +11,8 @@
     if (window.__UNBIND_LOADED__) return;
     window.__UNBIND_LOADED__ = true;
 
-    // Respond to keep-alive pings from background (prevents tab hibernation)
-    chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-        if (msg.action === 'keepAlive') {
-            sendResponse({ alive: true, exporting: !!window.__UNBIND_LOADED__ });
-        }
-    });
-
     const CONFIG = {
-        VERSION: '2.1.0',
+        VERSION: '2.2.0',
         UACS_VERSION: '1.0.0',
         MIN_DELAY_MS: 400,
         MAX_DELAY_MS: 8000,
@@ -267,7 +260,7 @@
                     <div class="unbind-final-stats">
                         <p><strong id="unbind-final-convos">0</strong> conversations</p>
                         <p><strong id="unbind-final-msgs">0</strong> messages</p>
-                        <p id="unbind-final-errors" style="display: none;"><strong>0</strong> errors</p>
+                        <p id="unbind-final-errors" style="display: none;"><strong>0</strong> errors <button id="unbind-retry-errors" style="display:none; margin-left:8px; padding:2px 10px; background:#10a37f; color:white; border:none; border-radius:4px; cursor:pointer; font-size:12px;">Retry failed</button></p>
                     </div>
 
                     <button id="unbind-download" class="unbind-btn-primary">Download</button>
@@ -314,9 +307,7 @@
         state.isRunning = true;
         state.isPaused = false;
         state.startTime = Date.now();
-
-        // Signal background to keep tab alive
-        try { chrome.runtime.sendMessage({ action: 'exportStarted' }); } catch(e) {}
+        acquireBackgroundLock();
         state.conversations = [];
         state.archivedConversations = [];
         state.messages = {};
@@ -522,7 +513,7 @@
                             }
                         }
                     } catch (error) {
-                        state.errors.push({ id: conv.id, title: conv.title, error: error.message });
+                        state.errors.push({ id: conv.id, title: conv.title, error: error.message, retryable: error.message.includes('401') || error.message.includes('429') || error.message.includes('HTTP') });
                         state.successStreak = 0;
                     }
 
@@ -1005,14 +996,45 @@
                     continue;
                 }
 
+                if (response.status === 401) {
+                    // Token expired — try to refresh it
+                    console.warn('[Unbind] 401 on', url, '— refreshing access token (attempt', attempt + 1, ')');
+                    state._accessToken = null;
+                    await ensureAccessToken();
+                    if (state._accessToken) {
+                        // Got a new token — retry immediately
+                        state._authRefreshCount = (state._authRefreshCount || 0) + 1;
+                        if (state._authRefreshCount > 3) {
+                            // Too many refreshes — session is truly dead
+                            throw new Error('Session expired. Please log into ChatGPT again, then click Retry.');
+                        }
+                        updateStatus('Re-authenticated. Retrying...');
+                        await sleep(500);
+                        continue;
+                    } else {
+                        throw new Error('Session expired (401). Please log into ChatGPT again, then click Retry.');
+                    }
+                }
+
                 if (response.status === 403) {
-                    throw new Error('Access denied (403). Session may have expired. Please refresh the page and try again.');
+                    // Try token refresh for 403 too
+                    if (attempt === 0) {
+                        state._accessToken = null;
+                        await ensureAccessToken();
+                        if (state._accessToken) {
+                            await sleep(500);
+                            continue;
+                        }
+                    }
+                    throw new Error('Access denied (403). Please refresh the page and try again.');
                 }
 
                 if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}`);
+                    throw new Error('HTTP ' + response.status);
                 }
 
+                // Success — reset auth refresh counter
+                state._authRefreshCount = 0;
                 return await response.json();
             } catch (error) {
                 if (attempt >= retries) throw error;
@@ -1021,8 +1043,56 @@
         }
     }
 
+    // Worker-based sleep — immune to Chrome's background tab throttling
+    const _sleepWorker = (() => {
+        try {
+            const blob = new Blob([`
+                self.onmessage = function(e) {
+                    setTimeout(function() { self.postMessage(e.data.id); }, e.data.ms);
+                };
+            `], { type: 'application/javascript' });
+            const w = new Worker(URL.createObjectURL(blob));
+            const pending = new Map();
+            let nextId = 0;
+            w.onmessage = (e) => {
+                const resolve = pending.get(e.data);
+                if (resolve) { pending.delete(e.data); resolve(); }
+            };
+            return { schedule(ms) {
+                return new Promise(resolve => {
+                    const id = nextId++;
+                    pending.set(id, resolve);
+                    w.postMessage({ id, ms });
+                });
+            }};
+        } catch {
+            // Fallback if Worker creation fails (CSP etc.)
+            return null;
+        }
+    })();
+
     function sleep(ms) {
+        if (_sleepWorker) return _sleepWorker.schedule(ms);
         return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    // Acquire a Web Lock to signal Chrome this tab is active (reduces throttling)
+    function acquireBackgroundLock() {
+        if (navigator.locks) {
+            navigator.locks.request('unbind-export-active', { mode: 'exclusive' }, () => {
+                // Hold the lock until export finishes
+                return new Promise(resolve => {
+                    state._releaseLock = resolve;
+                });
+            }).catch(() => {});
+        }
+    }
+
+    function releaseBackgroundLock() {
+        if (state._releaseLock) {
+            state._releaseLock();
+            state._releaseLock = null;
+        }
     }
 
     // ============================================================
@@ -1078,10 +1148,82 @@
     // COMPLETION
     // ============================================================
 
+    // ============================================================
+    // RETRY FAILED CONVERSATIONS
+    // ============================================================
+
+    async function retryFailedConversations() {
+        const retryable = state.errors.filter(e => e.retryable);
+        if (retryable.length === 0) {
+            updateStatus('No retryable errors.');
+            return;
+        }
+
+        const retryBtn = document.getElementById('unbind-retry-errors');
+        if (retryBtn) {
+            retryBtn.disabled = true;
+            retryBtn.textContent = 'Retrying...';
+        }
+
+        // Reset auth refresh counter for fresh attempt
+        state._authRefreshCount = 0;
+        let recovered = 0;
+        let stillFailed = [];
+
+        for (const err of retryable) {
+            try {
+                updateStatus(`Retrying: ${(err.title || err.id).substring(0, 40)}...`);
+                const data = await fetchAPI(`/backend-api/conversation/${err.id}`);
+                if (data?.mapping) {
+                    state.messages[err.id] = extractMessages(data);
+                    state.totalMessages += state.messages[err.id].length;
+
+                    const canvasItems = extractCanvasFromConversation(data);
+                    if (canvasItems.length > 0) {
+                        state.canvasOutputs.push({ conversation_id: err.id, title: err.title, items: canvasItems });
+                    }
+                    recovered++;
+                }
+                await sleep(CONFIG.MIN_DELAY_MS);
+            } catch (retryError) {
+                stillFailed.push({ id: err.id, title: err.title, error: retryError.message, retryable: retryError.message.includes('401') || retryError.message.includes('429') || retryError.message.includes('HTTP') });
+            }
+        }
+
+        // Replace errors list with only the ones that still failed
+        state.errors = state.errors.filter(e => !e.retryable).concat(stillFailed);
+
+        // Update UI
+        const errEl = document.getElementById('unbind-final-errors');
+        if (errEl) {
+            if (state.errors.length > 0) {
+                errEl.querySelector('strong').textContent = state.errors.length;
+            } else {
+                errEl.style.display = 'none';
+            }
+        }
+
+        // Update conversation count (recovered ones are now included)
+        if (recovered > 0) {
+            document.getElementById('unbind-final-msgs').textContent = state.totalMessages;
+        }
+
+        if (retryBtn) {
+            retryBtn.disabled = false;
+            if (stillFailed.length > 0) {
+                retryBtn.textContent = 'Retry failed';
+                retryBtn.style.display = 'inline-block';
+                updateStatus(`Recovered ${recovered}, ${stillFailed.length} still failed.`);
+            } else {
+                retryBtn.style.display = 'none';
+                updateStatus(`All ${recovered} failed conversations recovered!`);
+            }
+        }
+    }
+
     function showComplete() {
         state.isRunning = false;
-        // Signal background that export is done
-        try { chrome.runtime.sendMessage({ action: 'exportFinished' }); } catch(e) {}
+        releaseBackgroundLock();
         clearCheckpoint();
         showView('unbind-complete-view');
 
@@ -1101,6 +1243,12 @@
             if (errEl) {
                 errEl.style.display = 'block';
                 errEl.querySelector('strong').textContent = state.errors.length;
+                // Show retry button if any errors are retryable
+                const retryBtn = document.getElementById('unbind-retry-errors');
+                if (retryBtn && state.errors.some(e => e.retryable)) {
+                    retryBtn.style.display = 'inline-block';
+                    retryBtn.addEventListener('click', () => retryFailedConversations());
+                }
             }
         }
 
@@ -1150,6 +1298,7 @@
     function cancelExport() {
         if (confirm('Cancel export? Progress will be saved.')) {
             state.isRunning = false;
+            releaseBackgroundLock();
             saveCheckpoint();
             closeModal();
         }
@@ -1408,43 +1557,13 @@
     }
 
     function triggerDownload(blob, filename) {
-        const size = blob.size;
-
-        // Read blob as data URL and send to background script for chrome.downloads API
-        // (a.click() with blob URLs is blocked by ChatGPT's CSP)
-        const reader = new FileReader();
-        reader.onload = function() {
-            const dataUrl = reader.result;
-            try {
-                chrome.runtime.sendMessage({
-                    action: 'downloadFile',
-                    dataUrl: dataUrl,
-                    filename: filename,
-                }, (response) => {
-                    if (chrome.runtime.lastError || !response?.success) {
-                        console.warn('[Unbind] Background download failed, trying direct approach');
-                        directDownload(blob, filename);
-                    } else {
-                        console.log(`[Unbind] Downloaded via background: ${filename} (${(size / 1024).toFixed(1)} KB)`);
-                    }
-                });
-            } catch (e) {
-                console.warn('[Unbind] Extension context error, trying direct download:', e);
-                directDownload(blob, filename);
-            }
-        };
-        reader.readAsDataURL(blob);
-    }
-
-    function directDownload(blob, filename) {
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
         a.download = filename;
-        a.style.display = 'none';
-        document.body.appendChild(a);
         a.click();
-        setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 5000);
+        URL.revokeObjectURL(url);
+        console.log(`[Unbind] Downloaded: ${filename} (${(blob.size / 1024).toFixed(1)} KB)`);
     }
 
     function dateStamp() {
