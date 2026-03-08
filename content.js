@@ -1,5 +1,5 @@
 // ============================================================
-// UNBIND v2.2.0 — Content Script
+// UNBIND v2.3.0 — Content Script
 // Injected into chatgpt.com for one-click export
 // Supports: Free, Plus, Teams accounts
 // Output: UACS (Universal AI Conversation Standard)
@@ -12,7 +12,7 @@
     window.__UNBIND_LOADED__ = true;
 
     const CONFIG = {
-        VERSION: '2.2.0',
+        VERSION: '2.3.0',
         UACS_VERSION: '1.0.0',
         MIN_DELAY_MS: 400,
         MAX_DELAY_MS: 8000,
@@ -330,7 +330,7 @@
         await detectWorkspace();
 
         // Check for checkpoint
-        const checkpoint = loadCheckpoint();
+        const checkpoint = await loadCheckpoint();
         if (checkpoint && checkpoint.conversations.length > 0) {
             const resume = confirm(`Found checkpoint with ${Object.keys(checkpoint.messages || {}).length}/${checkpoint.conversations.length} conversations exported. Resume?`);
             if (resume) {
@@ -1221,10 +1221,11 @@
         }
     }
 
-    function showComplete() {
+    async function showComplete() {
         state.isRunning = false;
         releaseBackgroundLock();
-        clearCheckpoint();
+        // Keep checkpoint until download succeeds
+        await saveCheckpoint();
         showView('unbind-complete-view');
 
         document.getElementById('unbind-final-convos').textContent = state.conversations.length;
@@ -1308,28 +1309,70 @@
     // CHECKPOINT
     // ============================================================
 
-    function saveCheckpoint() {
+    // IndexedDB for checkpoints (no size limit, unlike localStorage's 5MB)
+    function getIDB() {
+        return new Promise((resolve, reject) => {
+            const req = indexedDB.open('unbind_db', 1);
+            req.onupgradeneeded = () => req.result.createObjectStore('checkpoints');
+            req.onsuccess = () => resolve(req.result);
+            req.onerror = () => reject(req.error);
+        });
+    }
+
+    async function saveCheckpoint() {
+        const data = {
+            conversations: state.conversations,
+            archivedConversations: state.archivedConversations,
+            messages: state.messages,
+            timestamp: Date.now(),
+        };
+        const done = Object.keys(state.messages).length;
+        const total = state.conversations.length;
+
         try {
-            localStorage.setItem(CONFIG.STORAGE_KEY, JSON.stringify({
-                conversations: state.conversations,
-                archivedConversations: state.archivedConversations,
-                messages: state.messages,
-                timestamp: Date.now(),
-            }));
-            console.log(`[Unbind] Checkpoint: ${Object.keys(state.messages).length}/${state.conversations.length}`);
+            const db = await getIDB();
+            const tx = db.transaction('checkpoints', 'readwrite');
+            tx.objectStore('checkpoints').put(data, CONFIG.STORAGE_KEY);
+            await new Promise((res, rej) => { tx.oncomplete = res; tx.onerror = rej; });
+            console.log(`[Unbind] Checkpoint (IDB): ${done}/${total}`);
+            return;
         } catch (e) {
-            console.warn('[Unbind] Checkpoint save failed:', e);
+            console.warn('[Unbind] IDB checkpoint failed:', e);
+        }
+
+        try {
+            localStorage.setItem(CONFIG.STORAGE_KEY, JSON.stringify(data));
+            console.log(`[Unbind] Checkpoint (LS): ${done}/${total}`);
+        } catch (e) {
+            console.error('[Unbind] ALL checkpoint saves failed! Export is ' + (JSON.stringify(data).length / 1024 / 1024).toFixed(1) + 'MB');
         }
     }
 
-    function loadCheckpoint() {
+    async function loadCheckpoint() {
+        try {
+            const db = await getIDB();
+            const tx = db.transaction('checkpoints', 'readonly');
+            const req = tx.objectStore('checkpoints').get(CONFIG.STORAGE_KEY);
+            const result = await new Promise((res, rej) => { req.onsuccess = () => res(req.result); req.onerror = rej; });
+            if (result) {
+                console.log('[Unbind] Loaded checkpoint from IDB');
+                return result;
+            }
+        } catch (e) {
+            console.warn('[Unbind] IDB load failed:', e);
+        }
         try {
             const data = localStorage.getItem(CONFIG.STORAGE_KEY);
             return data ? JSON.parse(data) : null;
         } catch { return null; }
     }
 
-    function clearCheckpoint() {
+    async function clearCheckpoint() {
+        try {
+            const db = await getIDB();
+            const tx = db.transaction('checkpoints', 'readwrite');
+            tx.objectStore('checkpoints').delete(CONFIG.STORAGE_KEY);
+        } catch {}
         localStorage.removeItem(CONFIG.STORAGE_KEY);
     }
 
@@ -1561,9 +1604,13 @@
         const a = document.createElement('a');
         a.href = url;
         a.download = filename;
+        a.style.display = 'none';
+        document.body.appendChild(a);
         a.click();
-        URL.revokeObjectURL(url);
-        console.log(`[Unbind] Downloaded: ${filename} (${(blob.size / 1024).toFixed(1)} KB)`);
+        console.log(`[Unbind] Downloaded: ${filename} (${(blob.size / 1024 / 1024).toFixed(1)} MB)`);
+        // Clear checkpoint now that download triggered
+        clearCheckpoint().catch(() => {});
+        setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 30000);
     }
 
     function dateStamp() {

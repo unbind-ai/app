@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Unbind — Export Your AI Conversations",
-  "version": "2.2.0",
+  "version": "2.3.0",
   "description": "One-click export for ChatGPT (Free, Plus, Teams). Your data never leaves your browser.",
   "author": "Unbind",
   "homepage_url": "https://unbind.esali.com",
