@@ -330,7 +330,7 @@
         await detectWorkspace();
 
         // Check for checkpoint
-        const checkpoint = loadCheckpoint();
+        const checkpoint = await loadCheckpoint();
         if (checkpoint && checkpoint.conversations.length > 0) {
             const resume = confirm(`Found checkpoint with ${Object.keys(checkpoint.messages || {}).length}/${checkpoint.conversations.length} conversations exported. Resume?`);
             if (resume) {
@@ -1305,32 +1305,87 @@
     }
 
     // ============================================================
-    // CHECKPOINT
+    // CHECKPOINT (IndexedDB)
     // ============================================================
 
-    function saveCheckpoint() {
+    function openCheckpointDB() {
+        return new Promise((resolve, reject) => {
+            const request = indexedDB.open('UnbindCheckpoints', 1);
+            request.onupgradeneeded = (event) => {
+                const db = event.target.result;
+                if (!db.objectStoreNames.contains('checkpoints')) {
+                    db.createObjectStore('checkpoints');
+                }
+            };
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject(request.error);
+        });
+    }
+
+    async function saveCheckpoint() {
         try {
-            localStorage.setItem(CONFIG.STORAGE_KEY, JSON.stringify({
+            const db = await openCheckpointDB();
+            const tx = db.transaction('checkpoints', 'readwrite');
+            tx.objectStore('checkpoints').put({
                 conversations: state.conversations,
                 archivedConversations: state.archivedConversations,
                 messages: state.messages,
                 timestamp: Date.now(),
-            }));
+            }, CONFIG.STORAGE_KEY);
+            await new Promise((resolve, reject) => {
+                tx.oncomplete = resolve;
+                tx.onerror = () => reject(tx.error);
+            });
+            db.close();
             console.log(`[Unbind] Checkpoint: ${Object.keys(state.messages).length}/${state.conversations.length}`);
         } catch (e) {
             console.warn('[Unbind] Checkpoint save failed:', e);
         }
     }
 
-    function loadCheckpoint() {
+    async function loadCheckpoint() {
         try {
-            const data = localStorage.getItem(CONFIG.STORAGE_KEY);
-            return data ? JSON.parse(data) : null;
+            // One-time migration from localStorage
+            const legacyData = localStorage.getItem(CONFIG.STORAGE_KEY);
+            if (legacyData) {
+                const parsed = JSON.parse(legacyData);
+                const db = await openCheckpointDB();
+                const tx = db.transaction('checkpoints', 'readwrite');
+                tx.objectStore('checkpoints').put(parsed, CONFIG.STORAGE_KEY);
+                await new Promise((resolve, reject) => {
+                    tx.oncomplete = resolve;
+                    tx.onerror = () => reject(tx.error);
+                });
+                db.close();
+                localStorage.removeItem(CONFIG.STORAGE_KEY);
+                console.log('[Unbind] Migrated checkpoint from localStorage to IndexedDB');
+                return parsed;
+            }
+
+            // Normal IndexedDB load
+            const db = await openCheckpointDB();
+            const tx = db.transaction('checkpoints', 'readonly');
+            const request = tx.objectStore('checkpoints').get(CONFIG.STORAGE_KEY);
+            const result = await new Promise((resolve, reject) => {
+                request.onsuccess = () => resolve(request.result || null);
+                request.onerror = () => reject(request.error);
+            });
+            db.close();
+            return result;
         } catch { return null; }
     }
 
-    function clearCheckpoint() {
-        localStorage.removeItem(CONFIG.STORAGE_KEY);
+    async function clearCheckpoint() {
+        try {
+            const db = await openCheckpointDB();
+            const tx = db.transaction('checkpoints', 'readwrite');
+            tx.objectStore('checkpoints').delete(CONFIG.STORAGE_KEY);
+            await new Promise((resolve, reject) => {
+                tx.oncomplete = resolve;
+                tx.onerror = () => reject(tx.error);
+            });
+            db.close();
+        } catch { /* silent */ }
     }
 
     // ============================================================
